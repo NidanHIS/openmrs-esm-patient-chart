@@ -5,7 +5,7 @@ import { Button, InlineNotification, Modal } from '@carbon/react';
 import { useMutatePatientOrders, invalidateVisitAndEncounterData } from '@openmrs/esm-patient-common-lib';
 import { showSnackbar } from '@openmrs/esm-framework';
 import { useSWRConfig } from 'swr';
-import type { DrugOrderItem } from '../resources/orderset-config';
+import type { OrderItem } from '../resources/orderset-config';
 import type { OrderConfigObject } from '../resources/order-config.resource';
 import { submitOrdersOnNewEncounter, type FastOrderPayload } from '../resources/order-api';
 import { resolveDrugByName } from '../resources/drug-resolver';
@@ -15,7 +15,7 @@ import styles from './order-review.scss';
 import { findValueCodedByDisplay } from '../lib/order-config-utils';
 
 interface OrderReviewProps {
-  drugs: DrugOrderItem[];
+  drugs: OrderItem[];
   orderSetName: string;
   orderConfig: OrderConfigObject;
   patientUuid: string;
@@ -46,18 +46,18 @@ export default function OrderReview({
   const [resolveError, setResolveError] = useState<string | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
-  const getQuantityForDrug = useCallback(
-    (d: DrugOrderItem) => {
-      const freqCoded = findValueCodedByDisplay(orderConfig.orderFrequencies, d.frequency);
-      const durUnitCoded = findValueCodedByDisplay(orderConfig.durationUnits, d.durationUnit);
-      const qty = calculateAutoQuantity(d.dose, freqCoded, d.duration, durUnitCoded, orderConfig);
-      return qty ?? Math.ceil(d.duration * 2); // fallback
-    },
-    [orderConfig],
-  );
+  const getQuantityForDrug = (d: OrderItem) => {
+    if (d.memberType !== 'DRUG' || d.dose === undefined) return 0;
+    const freqCoded = findValueCodedByDisplay(orderConfig.orderFrequencies, d.frequency || '');
+    const durUnitCoded = findValueCodedByDisplay(orderConfig.durationUnits, d.durationUnit || '');
+    const qty = calculateAutoQuantity(d.dose, freqCoded, d.duration || 0, durUnitCoded, orderConfig);
+    return qty ?? Math.ceil((d.duration || 0) * 2); // fallback
+  };
 
-  const hasZeroDose = drugs.some((d) => d.dose === 0);
-  const duplicates = drugs.filter((d, i, arr) => arr.findIndex((x) => x.drugName === d.drugName) !== i);
+  const hasZeroDose = drugs.some((d) => d.memberType === 'DRUG' && d.dose === 0);
+  const duplicates = drugs.filter(
+    (d, i, arr) => arr.findIndex((x) => x.drugName === d.drugName) !== i,
+  );
   const hasIssues = hasZeroDose || duplicates.length > 0;
 
   const getDisplayForRoute = (valueCoded: string) => {
@@ -90,33 +90,40 @@ export default function OrderReview({
       const unresolved: string[] = [];
 
       for (const d of drugs) {
-        const resolved = await resolveDrugByName(d.drugName);
-        if (!resolved) {
-          unresolved.push(d.drugName);
-          continue;
+        if (d.memberType === 'DRUG') {
+          const resolved = await resolveDrugByName(d.drugName);
+          if (!resolved) {
+            unresolved.push(d.drugName);
+            continue;
+          }
+
+          const routeCoded = findValueCodedByDisplay(orderConfig.drugRoutes, d.route || '');
+          const freqCoded = findValueCodedByDisplay(orderConfig.orderFrequencies, d.frequency || '');
+          const doseUnitCoded = findValueCodedByDisplay(orderConfig.drugDosingUnits, d.doseUnit || '');
+          const durUnitCoded = findValueCodedByDisplay(orderConfig.durationUnits, d.durationUnit || '');
+
+          const quantity = getQuantityForDrug(d);
+
+          payloads.push({
+            drugUuid: resolved.uuid,
+            conceptUuid: resolved.conceptUuid,
+            dose: d.dose || 0,
+            doseUnits: doseUnitCoded,
+            route: routeCoded,
+            frequency: freqCoded,
+            asNeeded: false,
+            quantity,
+            quantityUnits: doseUnitCoded,
+            duration: d.duration || 0,
+            durationUnits: durUnitCoded,
+            dosingInstructions: d.instructions ?? undefined,
+          });
+        } else {
+          // Non-drug items: Procedures, Labs, etc.
+          // For now, we only handle drug orders in the submit API.
+          // We might need to add support for other order types later.
+          console.warn(`Order type ${d.memberType} not yet supported for submission`);
         }
-
-        const routeCoded = findValueCodedByDisplay(orderConfig.drugRoutes, d.route);
-        const freqCoded = findValueCodedByDisplay(orderConfig.orderFrequencies, d.frequency);
-        const doseUnitCoded = findValueCodedByDisplay(orderConfig.drugDosingUnits, d.doseUnit);
-        const durUnitCoded = findValueCodedByDisplay(orderConfig.durationUnits, d.durationUnit);
-
-        const quantity = getQuantityForDrug(d);
-
-        payloads.push({
-          drugUuid: resolved.uuid,
-          conceptUuid: resolved.conceptUuid,
-          dose: d.dose,
-          doseUnits: doseUnitCoded,
-          route: routeCoded,
-          frequency: freqCoded,
-          asNeeded: false,
-          quantity,
-          quantityUnits: doseUnitCoded,
-          duration: d.duration,
-          durationUnits: durUnitCoded,
-          dosingInstructions: d.instructions ?? undefined,
-        });
       }
 
       if (unresolved.length > 0) {
@@ -157,7 +164,6 @@ export default function OrderReview({
   }, [
     drugs,
     hasIssues,
-    getQuantityForDrug,
     orderConfig,
     patientUuid,
     ordererUuid,
@@ -206,7 +212,8 @@ export default function OrderReview({
               {hasZeroDose && <p>{t('someDrugsZeroDose', 'Some drugs have a dose of 0.')}</p>}
               {duplicates.length > 0 && (
                 <p>
-                  {t('duplicateDrugs', 'Duplicate drugs:')} {[...new Set(duplicates.map((d) => d.drugName))].join(', ')}
+                  {t('duplicateDrugs', 'Duplicate drugs:')}{' '}
+                  {[...new Set(duplicates.map((d) => d.drugName))].join(', ')}
                 </p>
               )}
             </div>
@@ -218,7 +225,10 @@ export default function OrderReview({
         {drugs.map((drug, idx) => {
           const routeDisplay = getDisplayForRoute(drug.route);
           return (
-            <div key={drug.id} className={`${styles.drugCard} ${drug.dose === 0 ? styles.drugCardInvalid : ''}`}>
+            <div
+              key={drug.id}
+              className={`${styles.drugCard} ${drug.dose === 0 ? styles.drugCardInvalid : ''}`}
+            >
               <div className={styles.drugHeader}>
                 <div className={styles.drugTitle}>
                   <span className={styles.drugIndex}>{idx + 1}.</span>
@@ -239,10 +249,11 @@ export default function OrderReview({
                   {drug.duration} {getDisplayForDurUnit(drug.durationUnit)}
                 </p>
                 <p className={styles.quantityText}>
-                  <strong>{t('dispense', 'Dispense:')}</strong> {getQuantityForDrug(drug)}{' '}
-                  {getDisplayForDoseUnit(drug.doseUnit)}
+                  <strong>{t('dispense', 'Dispense:')}</strong> {getQuantityForDrug(drug)} {getDisplayForDoseUnit(drug.doseUnit)}
                 </p>
-                {drug.instructions && <p className={styles.instructions}>📝 {drug.instructions}</p>}
+                {drug.instructions && (
+                  <p className={styles.instructions}>📝 {drug.instructions}</p>
+                )}
               </div>
             </div>
           );
@@ -278,7 +289,7 @@ export default function OrderReview({
             {t(
               'confirmSubmissionMessage',
               'You are about to submit {{count}} medication orders to the patient chart. Do you want to continue?',
-              { count: drugs.length },
+              { count: drugs.length }
             )}
           </p>
         </Modal>

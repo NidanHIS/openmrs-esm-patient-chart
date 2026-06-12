@@ -31,8 +31,7 @@ export function LinkExtension({ config }: { config: LinkConfig }) {
   return (
     <ConfigurableLink
       to={spaBasePath + '/' + name}
-      className={`cds--side-nav__link ${name === urlSegment && 'active-left-nav-link'}`}
-    >
+      className={`cds--side-nav__link ${name === urlSegment && 'active-left-nav-link'}`}>
       <span className={styles.menu}>
         <MaybeIcon icon={config.icon} className={styles.icon} size={16} />
         <span>{t(title)}</span>
@@ -41,8 +40,9 @@ export function LinkExtension({ config }: { config: LinkConfig }) {
   );
 }
 
-export const createLeftPanelLink = (config: LinkConfig) => () => (
-  <BrowserRouter>
-    <LinkExtension config={config} />
-  </BrowserRouter>
-);
+export const createLeftPanelLink = (config: LinkConfig) => () =>
+  (
+    <BrowserRouter>
+      <LinkExtension config={config} />
+    </BrowserRouter>
+  );
