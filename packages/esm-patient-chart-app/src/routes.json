@@ -189,7 +189,7 @@
     {
       "name": "diagnosis-overview-widget",
       "slot": "patient-chart-summary-dashboard-slot",
-      "order": 2,
+      "order": 3,
       "component": "diagnosisOverview",
       "online": true,
       "offline": true
