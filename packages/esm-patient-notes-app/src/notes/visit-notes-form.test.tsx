@@ -18,7 +18,7 @@ import {
   useFeatureFlag,
 } from '@openmrs/esm-framework';
 import { type PatientWorkspace2DefinitionProps } from '@openmrs/esm-patient-common-lib';
-import { fetchDiagnosisConceptsByName, saveVisitNote, updateVisitNote } from './visit-notes.resource';
+import { fetchDiagnosisConceptsByName, saveVisitNote, updateVisitNote, savePatientDiagnosis } from './visit-notes.resource';
 import {
   ConfigMock,
   diagnosisSearchResponse,
@@ -61,6 +61,7 @@ const mockFetchDiagnosisConceptsByName = vi.mocked(fetchDiagnosisConceptsByName)
 const mockSaveVisitNote = vi.mocked(saveVisitNote);
 const mockShowSnackbar = vi.mocked(showSnackbar);
 const mockUpdateVisitNote = vi.mocked(updateVisitNote);
+const mockSavePatientDiagnosis = vi.mocked(savePatientDiagnosis);
 const mockUseConfig = vi.mocked(useConfig<ConfigObject>);
 const mockUseSession = vi.mocked(useSession);
 const mockedUseFeatureFlag = vi.mocked(useFeatureFlag);
@@ -77,6 +78,8 @@ vi.mock('./visit-notes.resource', () => ({
     data: mockFetchProviderByUuidResponse.data.uuid,
   })),
   saveVisitNote: vi.fn(),
+  savePatientDiagnosis: vi.fn().mockResolvedValue({ status: 201 }),
+  deletePatientDiagnosis: vi.fn().mockResolvedValue({ status: 200 }),
   useVisitNotes: vi.fn().mockImplementation(() => ({
     mutateVisitNotes: vi.fn(),
   })),
@@ -520,4 +523,47 @@ test('requires primary diagnosis when isPrimaryDiagnosisRequired is true', async
     ...getDefaultsFromConfigSchema(configSchema),
     ...ConfigMock,
   });
+});
+
+test('updates diagnosis certainty and submits correct payload', async () => {
+  const user = userEvent.setup();
+  const mockConsoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+  mockSaveVisitNote.mockResolvedValueOnce({
+    status: 201,
+    body: 'Encounter created',
+    data: { uuid: 'enc-123' },
+  } as any);
+  mockFetchDiagnosisConceptsByName.mockResolvedValue(diagnosisSearchResponse.results);
+
+  renderVisitNotesForm();
+
+  // Add primary diagnosis
+  const searchBox = screen.getByPlaceholderText('Choose a primary diagnosis');
+  await user.type(searchBox, 'Diabetes Mellitus');
+  const targetSearchResult = await screen.findByText('Diabetes Mellitus');
+  await user.click(targetSearchResult);
+
+  // Toggle certainty to CONFIRMED
+  const confirmedButton = screen.getByText('Confirmed');
+  await user.click(confirmedButton);
+
+  // Enter clinical note
+  const clinicalNote = screen.getByRole('textbox', { name: /Write your notes/i });
+  await user.type(clinicalNote, 'Testing diagnosis certainty');
+
+  // Submit
+  const submitButton = screen.getByRole('button', { name: /Save and close/i });
+  await user.click(submitButton);
+
+  expect(mockSaveVisitNote).toHaveBeenCalledTimes(1);
+  expect(mockSavePatientDiagnosis).toHaveBeenCalledWith(
+    expect.any(AbortController),
+    expect.objectContaining({
+      certainty: 'CONFIRMED',
+      diagnosis: { coded: '789' },
+    }),
+  );
+
+  mockConsoleError.mockRestore();
 });

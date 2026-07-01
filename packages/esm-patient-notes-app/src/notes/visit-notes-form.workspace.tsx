@@ -12,6 +12,7 @@ import {
   Button,
   ButtonSet,
   Column,
+  ContentSwitcher,
   Form,
   FormGroup,
   InlineLoading,
@@ -20,6 +21,7 @@ import {
   Search,
   SkeletonText,
   Stack,
+  Switch,
   Tag,
   TextArea,
   Tile,
@@ -307,6 +309,21 @@ const VisitNotesForm: React.FC<PatientWorkspace2DefinitionProps<VisitNotesFormPr
     [combinedDiagnoses, selectedPrimaryDiagnoses, selectedSecondaryDiagnoses],
   );
 
+  const handleChangeCertainty = useCallback(
+    (diagnosisCodedUuid: string, newCertainty: 'PROVISIONAL' | 'CONFIRMED') => {
+      setSelectedPrimaryDiagnoses((prev) =>
+        prev.map((d) => (d.diagnosis.coded === diagnosisCodedUuid ? { ...d, certainty: newCertainty } : d)),
+      );
+      setSelectedSecondaryDiagnoses((prev) =>
+        prev.map((d) => (d.diagnosis.coded === diagnosisCodedUuid ? { ...d, certainty: newCertainty } : d)),
+      );
+      setCombinedDiagnoses((prev) =>
+        prev.map((d) => (d.diagnosis.coded === diagnosisCodedUuid ? { ...d, certainty: newCertainty } : d)),
+      );
+    },
+    [],
+  );
+
   const isDiagnosisNotSelected = (diagnosis: Concept) => {
     const isPrimaryDiagnosisSelected = selectedPrimaryDiagnoses.some(
       (selectedDiagnosis) => diagnosis.uuid === selectedDiagnosis.diagnosis.coded,
@@ -387,12 +404,12 @@ const VisitNotesForm: React.FC<PatientWorkspace2DefinitionProps<VisitNotesFormPr
         encounterType: encounterTypeUuid,
         obs: clinicalNote
           ? [
-              {
-                concept: { uuid: encounterNoteTextConceptUuid, display: '' },
-                value: clinicalNote,
-                ...(existingClinicalNoteObs && { uuid: existingClinicalNoteObs.uuid }),
-              },
-            ]
+            {
+              concept: { uuid: encounterNoteTextConceptUuid, display: '' },
+              value: clinicalNote,
+              ...(existingClinicalNoteObs && { uuid: existingClinicalNoteObs.uuid }),
+            },
+          ]
           : [],
       };
 
@@ -510,7 +527,7 @@ const VisitNotesForm: React.FC<PatientWorkspace2DefinitionProps<VisitNotesFormPr
   const hasUserUnsavedChanges = Object.keys(dirtyFields).length > 0;
 
   return (
-    <Workspace2 title={t('visitNoteWorkspaceTitle', 'Visit note')} hasUnsavedChanges={hasUserUnsavedChanges}>
+    <Workspace2 title={t('visitNoteWorkspaceTitle', 'Diagnosis')} hasUnsavedChanges={hasUserUnsavedChanges}>
       <Form className={styles.form} onSubmit={handleSubmit(onSubmit, onError)}>
         <ExtensionSlot name="visit-context-header-slot" state={{ patientUuid }} />
 
@@ -550,33 +567,11 @@ const VisitNotesForm: React.FC<PatientWorkspace2DefinitionProps<VisitNotesFormPr
                 </Column>
               </Row>
             )}
-            <div className={styles.diagnosesText}>
-              {selectedPrimaryDiagnoses.map((diagnosis) => (
-                <Tag
-                  className={styles.tag}
-                  filter
-                  key={diagnosis.diagnosis.coded}
-                  onClose={() => handleRemoveDiagnosis(diagnosis, 'primaryInputSearch')}
-                  type="red"
-                >
-                  {diagnosis.display}
-                </Tag>
-              ))}
-              {selectedSecondaryDiagnoses.map((diagnosis) => (
-                <Tag
-                  className={styles.tag}
-                  filter
-                  key={diagnosis.diagnosis.coded}
-                  onClose={() => handleRemoveDiagnosis(diagnosis, 'secondaryInputSearch')}
-                  type="blue"
-                >
-                  {diagnosis.display}
-                </Tag>
-              ))}
-              {!selectedPrimaryDiagnoses.length && !selectedSecondaryDiagnoses.length && (
+            {!combinedDiagnoses.length && (
+              <div className={styles.diagnosesText}>
                 <span>{t('emptyDiagnosisText', 'No diagnosis selected — Enter a diagnosis below')}</span>
-              )}
-            </div>
+              </div>
+            )}
             <Row className={styles.row}>
               <Column sm={1}>
                 <span className={styles.columnLabel}>{t('primaryDiagnosis', 'Primary diagnosis')}</span>
@@ -611,6 +606,36 @@ const VisitNotesForm: React.FC<PatientWorkspace2DefinitionProps<VisitNotesFormPr
                     t={t}
                     value={watch('primaryDiagnosisSearch')}
                   />
+                  {selectedPrimaryDiagnoses.length > 0 && (
+                    <div className={styles.selectedDiagnosesList}>
+                      {selectedPrimaryDiagnoses.map((diagnosis) => (
+                        <div key={diagnosis.diagnosis.coded} className={styles.selectedDiagnosisRow}>
+                          <div className={styles.diagnosisInfo}>
+                            <Tag
+                              className={styles.tag}
+                              filter
+                              onClose={() => handleRemoveDiagnosis(diagnosis, 'primaryInputSearch')}
+                              type="red"
+                            >
+                              {diagnosis.display}
+                            </Tag>
+                          </div>
+                          <div className={styles.certaintySwitcher}>
+                            <ContentSwitcher
+                              size="sm"
+                              selectedIndex={diagnosis.certainty === 'CONFIRMED' ? 1 : 0}
+                              onChange={({ name }) =>
+                                handleChangeCertainty(diagnosis.diagnosis.coded, name as 'PROVISIONAL' | 'CONFIRMED')
+                              }
+                            >
+                              <Switch name="PROVISIONAL" text={t('provisional', 'Provisional')} />
+                              <Switch name="CONFIRMED" text={t('confirmed', 'Confirmed')} />
+                            </ContentSwitcher>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </FormGroup>
               </Column>
             </Row>
@@ -647,6 +672,36 @@ const VisitNotesForm: React.FC<PatientWorkspace2DefinitionProps<VisitNotesFormPr
                     t={t}
                     value={watch('secondaryDiagnosisSearch')}
                   />
+                  {selectedSecondaryDiagnoses.length > 0 && (
+                    <div className={styles.selectedDiagnosesList}>
+                      {selectedSecondaryDiagnoses.map((diagnosis) => (
+                        <div key={diagnosis.diagnosis.coded} className={styles.selectedDiagnosisRow}>
+                          <div className={styles.diagnosisInfo}>
+                            <Tag
+                              className={styles.tag}
+                              filter
+                              onClose={() => handleRemoveDiagnosis(diagnosis, 'secondaryInputSearch')}
+                              type="blue"
+                            >
+                              {diagnosis.display}
+                            </Tag>
+                          </div>
+                          <div className={styles.certaintySwitcher}>
+                            <ContentSwitcher
+                              size="sm"
+                              selectedIndex={diagnosis.certainty === 'CONFIRMED' ? 1 : 0}
+                              onChange={({ name }) =>
+                                handleChangeCertainty(diagnosis.diagnosis.coded, name as 'PROVISIONAL' | 'CONFIRMED')
+                              }
+                            >
+                              <Switch name="PROVISIONAL" text={t('provisional', 'Provisional')} />
+                              <Switch name="CONFIRMED" text={t('confirmed', 'Confirmed')} />
+                            </ContentSwitcher>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </FormGroup>
               </Column>
             </Row>

@@ -42,6 +42,7 @@
       "name": "visit-note",
       "icon": "visitNotesActionButton",
       "group": "patient-chart",
+      "width": "extra-wide",
       "order": 2
     }
   ]
