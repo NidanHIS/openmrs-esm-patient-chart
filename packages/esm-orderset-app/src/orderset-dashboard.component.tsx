@@ -1,16 +1,25 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, InlineLoading } from '@carbon/react';
 import { Add, Save, ArrowRight, ArrowLeft } from '@carbon/react/icons';
-import { useConfig, useSession, showSnackbar } from '@openmrs/esm-framework';
-import { usePatientChartStore, EmptyState } from '@openmrs/esm-patient-common-lib';
+import {
+  useConfig,
+  useSession,
+  userHasAccess,
+  showSnackbar,
+} from '@openmrs/esm-framework';
+import {
+  usePatientChartStore,
+  EmptyState,
+} from '@openmrs/esm-patient-common-lib';
 import { useOrderConfig } from './resources/order-config.resource';
 import { useOrdersetCart } from './resources/orderset-cart.resource';
-import { defaultOrderSets } from './resources/orderset-config';
+import { useOrderSets, saveOrderSet, deleteOrderSet } from './resources/orderset.resource';
 import type { OrderSet } from './resources/orderset-config';
 import type { ConfigObject } from './config-schema';
 import DrugOrderEditor from './components/DrugOrderEditor';
 import CreateOrderSetForm from './components/CreateOrderSetForm';
+import DeleteOrderSetModal from './components/DeleteOrderSetModal';
 import styles from './orderset-dashboard.scss';
 import { OrderSetHeader } from './header/orderset-header.component';
 import OrderSetList from './components/OrderSetList';
@@ -26,21 +35,48 @@ interface OrdersetDashboardProps {
 export default function OrdersetDashboard({ patientUuid, patient }: OrdersetDashboardProps) {
   const { t } = useTranslation();
   const { orderEncounterType } = useConfig<ConfigObject>();
-  const { sessionLocation, currentProvider } = useSession();
+  const session = useSession();
+  const { sessionLocation, currentProvider } = session;
   const { visitContext } = usePatientChartStore(patientUuid);
 
   const ordererUuid = currentProvider?.uuid ?? '';
   const orderLocationUuid = sessionLocation?.uuid ?? '';
   const visitUuid = visitContext?.uuid;
 
-  const { orderConfigObject, isLoading, error } = useOrderConfig();
-  const { selectedSet, drugs, customSets, selectSet, setDrugs, addCustomSet, removeCustomSet, clearSelection } =
-    useOrdersetCart();
+  const hasGetPrivilege = userHasAccess('Get Order Sets', session.user!);
+  console.log('hasget', hasGetPrivilege);
+  const hasManagePrivilege = userHasAccess('Manage Order Sets', session.user!);
+  console.log('hasman', hasManagePrivilege);
+
+  if (!hasGetPrivilege && !hasManagePrivilege) {
+    return (
+      <EmptyState
+        headerTitle={t('orderSets', 'Order Setsjhuhu')}
+        displayText={t('noPermissionToViewOrderSets', 'You do not have permission to view order sets')}
+      />
+    );
+  }
+
+  const { orderConfigObject, isLoading: isConfigLoading, error: configError } = useOrderConfig();
+  const { orderSets: realSets, isLoading: isSetsLoading, error: setsError, mutate: mutateSets } = useOrderSets();
+  const {
+    selectedSet,
+    drugs,
+    customSets,
+    selectSet,
+    setDrugs,
+    addCustomSet,
+    removeCustomSet,
+    clearSelection,
+  } = useOrdersetCart();
 
   const [step, setStep] = useState<Step>('list');
   const [isCreatingNew, setIsCreatingNew] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [setToDelete, setSetToDelete] = useState<{ id: string, name: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const allSets = [...defaultOrderSets, ...customSets];
+  const allSets = useMemo(() => [...realSets, ...customSets], [realSets, customSets]);
 
   const handleSelectSet = useCallback(
     (set: OrderSet) => {
@@ -61,7 +97,7 @@ export default function OrdersetDashboard({ patientUuid, patient }: OrdersetDash
       name: 'New Order Set',
       category: '',
       description: '',
-      drugs: [],
+      members: [],
     });
     setStep('edit');
     setIsCreatingNew(true);
@@ -78,28 +114,71 @@ export default function OrdersetDashboard({ patientUuid, patient }: OrdersetDash
 
   const handleDeleteSet = useCallback(
     (setId: string) => {
-      removeCustomSet(setId);
-      clearSelection();
-      setStep('edit');
-      setIsCreatingNew(false);
+      const set = allSets.find(s => s.id === setId);
+      if (set) {
+        setSetToDelete({ id: set.id, name: set.name });
+        setDeleteModalOpen(true);
+      }
     },
-    [removeCustomSet, clearSelection],
+    [allSets],
+  );
+
+  const confirmDeleteSet = useCallback(
+    async (reason: string) => {
+      if (!setToDelete) return;
+      
+      setIsDeleting(true);
+      try {
+        if (!setToDelete.id.startsWith('custom-') && !setToDelete.id.startsWith('new-')) {
+          await deleteOrderSet(setToDelete.id, reason);
+        } else {
+          removeCustomSet(setToDelete.id);
+        }
+        mutateSets();
+        clearSelection();
+        setStep('list');
+        setIsCreatingNew(false);
+        setDeleteModalOpen(false);
+        showSnackbar({
+          title: t('orderSetDeleted', 'Order set deleted'),
+          kind: 'success',
+        });
+      } catch (e) {
+        showSnackbar({
+          title: t('errorDeletingOrderSet', 'Error deleting order set'),
+          kind: 'error',
+          subtitle: (e as Error)?.message,
+        });
+      } finally {
+        setIsDeleting(false);
+        setSetToDelete(null);
+      }
+    },
+    [setToDelete, removeCustomSet, clearSelection, mutateSets, t],
   );
 
   const handleSaveOrderSet = useCallback(
-    (newSet: OrderSet) => {
-      addCustomSet(newSet);
-      selectSet(newSet);
-      setStep('edit');
-      setIsCreatingNew(false);
-      showSnackbar({
-        isLowContrast: true,
-        title: t('orderSetSaved', 'Order set saved'),
-        kind: 'success',
-        subtitle: t('orderSetSavedSuccess', 'The order set has been saved successfully.'),
-      });
+    async (newSet: OrderSet) => {
+      try {
+        const saved = await saveOrderSet(newSet);
+        mutateSets();
+        setStep('list');
+        setIsCreatingNew(false);
+        showSnackbar({
+          isLowContrast: true,
+          title: t('orderSetSaved', 'Order set saved'),
+          kind: 'success',
+          subtitle: t('orderSetSavedSuccess', 'The order set has been saved successfully.'),
+        });
+      } catch (e) {
+        showSnackbar({
+          title: t('errorSavingOrderSet', 'Error saving order set'),
+          kind: 'error',
+          subtitle: (e as Error)?.message,
+        });
+      }
     },
-    [addCustomSet, selectSet, t],
+    [mutateSets, t],
   );
 
   const handleDrugsChange = useCallback(
@@ -135,16 +214,16 @@ export default function OrdersetDashboard({ patientUuid, patient }: OrdersetDash
     }
   }, [step, clearSelection, isCreatingNew]);
 
-  if (error) {
+  if (configError || setsError) {
     return (
       <EmptyState
         headerTitle={t('orderSets', 'Order Sets')}
-        displayText={t('errorLoadingOrderConfig', 'Error loading order config')}
+        displayText={t('errorLoadingOrderData', 'Error loading order set data')}
       />
     );
   }
 
-  if (isLoading) {
+  if (isConfigLoading || isSetsLoading) {
     return (
       <div className={styles.loading}>
         <InlineLoading status="active" description={t('loading', 'Loading…')} />
@@ -165,7 +244,7 @@ export default function OrdersetDashboard({ patientUuid, patient }: OrdersetDash
               </Button>
             </div>
             <div className={styles.headerRight}>
-              {selectedSet && step === 'edit' && isCreatingNew && drugs.length > 0 && (
+              {hasManagePrivilege && selectedSet && step === 'edit' && isCreatingNew && drugs.length > 0 && (
                 <Button size="sm" kind="primary" renderIcon={Save} onClick={() => setStep('save-set')}>
                   {t('saveAsOrderSet', 'Save Order Set')}
                 </Button>
@@ -184,15 +263,17 @@ export default function OrdersetDashboard({ patientUuid, patient }: OrdersetDash
                 onDelete={handleDeleteSet}
                 onCreateNew={handleCreateNew}
                 orderConfig={orderConfigObject}
+                hasManagePrivilege={hasManagePrivilege}
               />
             ) : step === 'detail' && selectedSet ? (
               <OrderSetDetail
                 set={selectedSet}
-                isCustom={customSets.some((s) => s.id === selectedSet.id)}
+                isCustom={customSets.some(s => s.id === selectedSet.id)}
                 orderConfig={orderConfigObject}
                 onEdit={handleEditSet}
                 onDelete={handleDeleteSet}
                 onBack={handleBack}
+                hasManagePrivilege={hasManagePrivilege}
               />
             ) : !selectedSet ? (
               <div className={styles.emptyState}>
@@ -203,6 +284,7 @@ export default function OrdersetDashboard({ patientUuid, patient }: OrdersetDash
               </div>
             ) : step === 'save-set' ? (
               <CreateOrderSetForm
+                initialSet={selectedSet}
                 drugs={drugs}
                 orderConfig={orderConfigObject}
                 onSave={handleSaveOrderSet}
@@ -219,6 +301,15 @@ export default function OrdersetDashboard({ patientUuid, patient }: OrdersetDash
           </div>
         </main>
       </div>
+
+      <DeleteOrderSetModal
+        open={deleteModalOpen}
+        orderSetName={setToDelete?.name || ''}
+        isDeleting={isDeleting}
+        onClose={() => setDeleteModalOpen(false)}
+        onConfirm={confirmDeleteSet}
+      />
     </div>
   );
 }
+

@@ -31,7 +31,8 @@ export default function OrderSetSelector({
 
   const filtered = orderSets.filter(
     (s) =>
-      s.name.toLowerCase().includes(search.toLowerCase()) || s.category.toLowerCase().includes(search.toLowerCase()),
+      s.name.toLowerCase().includes(search.toLowerCase()) ||
+      s.category.toLowerCase().includes(search.toLowerCase()),
   );
 
   const categories = [...new Set(filtered.map((s) => s.category))].filter(Boolean);
@@ -67,16 +68,16 @@ export default function OrderSetSelector({
 
       <div className={styles.searchWrapper}>
         <TextInput
-          id="orderset-search"
-          ref={inputRef}
-          size="md"
-          placeholder={t('searchOrderSets', 'Search order sets... (↑↓ Enter)')}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={handleKeyDown}
-          labelText=""
-          hideLabel
-        />
+            id="orderset-search"
+            ref={inputRef}
+            size="md"
+            placeholder={t('searchOrderSets', 'Search order sets... (↑↓ Enter)')}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={handleKeyDown}
+            labelText=""
+            hideLabel
+          />
       </div>
 
       <div className={styles.list}>
@@ -98,7 +99,9 @@ export default function OrderSetSelector({
                     onClick={() => onSelect(set)}
                   >
                     <div className={styles.setRow}>
-                      <span className={`${styles.setName} ${isActive ? styles.setNameActive : ''}`}>{set.name}</span>
+                      <span className={`${styles.setName} ${isActive ? styles.setNameActive : ''}`}>
+                        {set.name}
+                      </span>
                       <div className={styles.setActions}>
                         {isCustom && (
                           <OverflowMenu
@@ -132,7 +135,7 @@ export default function OrderSetSelector({
                     </div>
                     <div className={styles.setMeta}>
                       <Tag size="sm" type="gray">
-                        {set.drugs.length} drugs
+                        {set.members.length} {set.members.length === 1 ? t('item', 'item') : t('items', 'items')}
                       </Tag>
                       <span className={styles.setDescription}>{set.description}</span>
                     </div>
@@ -142,7 +145,9 @@ export default function OrderSetSelector({
           </div>
         ))}
         {filtered.length === 0 && (
-          <p className={styles.emptyMessage}>{t('noOrderSetsMatch', 'No order sets match "{{search}}"', { search })}</p>
+          <p className={styles.emptyMessage}>
+            {t('noOrderSetsMatch', 'No order sets match "{{search}}"', { search })}
+          </p>
         )}
       </div>
     </div>

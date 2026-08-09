@@ -18,14 +18,6 @@
   margin-bottom: 0.5rem;
 }
 
-.createButton {
-  background-color: colors.$teal-70 !important;
-
-  &:hover {
-    background-color: colors.$teal-80 !important;
-  }
-}
-
 .list {
   flex: 1;
   overflow-y: auto;
@@ -148,15 +140,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: $ui-02;
+  background-color: transparent;
   padding: 0.125rem;
   border-radius: 2px;
   flex-shrink: 0;
+
+  svg {
+    fill: colors.$gray-50;
+  }
 }
 
-.checkIcon {
-  fill: var(--cds-text-01, #161616);
-}
 
 .previewName {
   font-weight: 500;
