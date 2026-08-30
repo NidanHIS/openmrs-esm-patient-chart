@@ -53,7 +53,7 @@ export function drugOrderBasketItemToFormValue(item: DrugOrderBasketItem, startD
     drug: item?.drug as Partial<Drug>,
     isFreeTextDosage: item?.isFreeTextDosage ?? false,
     freeTextDosage: item?.freeTextDosage,
-    dosage: item?.dosage ?? null,
+    dosage: item?.dosage ?? 1,
     unit: item?.unit,
     route: item?.route,
     patientInstructions: item?.patientInstructions ?? '',

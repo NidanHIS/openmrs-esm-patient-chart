@@ -238,6 +238,20 @@ export function DrugOrderForm({
   ]);
 
   useEffect(() => {
+    const drugRoute = (drug as any)?.route;
+    if (drugRoute && !getValues('route')) {
+      setValue(
+        'route',
+        {
+          valueCoded: drugRoute.uuid,
+          value: drugRoute.display,
+        },
+        { shouldValidate: true },
+      );
+    }
+  }, [drug, getValues, setValue]);
+
+  useEffect(() => {
     if (!requireOutpatientQuantity || isManualOverride) {
       return;
     }
@@ -324,7 +338,19 @@ export function DrugOrderForm({
     [orderConfigObject, initialOrderBasketItem?.drug?.dosageForm],
   );
 
-  const drugRoutes: Array<MedicationRoute> = useMemo(() => orderConfigObject?.drugRoutes ?? [], [orderConfigObject]);
+  const drugRoutes: Array<MedicationRoute> = useMemo(
+    () =>
+      orderConfigObject?.drugRoutes ??
+      ((initialOrderBasketItem?.drug as any)?.route
+        ? [
+            {
+              valueCoded: (initialOrderBasketItem?.drug as any)?.route?.uuid,
+              value: (initialOrderBasketItem?.drug as any)?.route?.display,
+            },
+          ]
+        : []),
+    [orderConfigObject, (initialOrderBasketItem?.drug as any)?.route],
+  );
 
   const drugDispensingUnits: Array<QuantityUnit> = useMemo(
     () =>
