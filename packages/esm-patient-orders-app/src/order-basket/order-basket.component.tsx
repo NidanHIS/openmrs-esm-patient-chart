@@ -126,9 +126,9 @@ const useUnifiedSearch = (
   } = useSWRImmutable<any[]>(
     conceptSets.length > 0
       ? conceptSets.map(
-          (c) =>
-            `${restBaseUrl}/concept/${c.uuid}?v=custom:(display,names:(display),uuid,setMembers:(display,uuid,conceptClass:(display)))`,
-        )
+        (c) =>
+          `${restBaseUrl}/concept/${c.uuid}?v=custom:(display,names:(display),uuid,setMembers:(display,uuid,conceptClass:(display),retired))`,
+      )
       : null,
     openmrsFetchMultipleConcepts,
   );
@@ -139,7 +139,7 @@ const useUnifiedSearch = (
     isLoading: isSearchingDrugs,
   } = useSWR<any>(
     searchTerm
-      ? `${restBaseUrl}/drug?q=${searchTerm}&v=custom:(uuid,display,name,strength,dosageForm:(display,uuid),concept:(display,uuid),narcotic)`
+      ? `${restBaseUrl}/drug?q=${searchTerm}&v=custom:(uuid,display,name,strength,dosageForm:(display,uuid),concept:(display,uuid),narcotic,route:(display,uuid))`
       : null,
     openmrsFetch,
   );
@@ -156,6 +156,7 @@ const useUnifiedSearch = (
         // The response is { data: {...} } from openmrsFetch
         const members = response?.data?.setMembers || [];
         members.forEach((m) => {
+          if (m.retired) return;
           concepts.push({
             ...m,
             type: 'concept',
@@ -236,7 +237,8 @@ const SearchResultItem: React.FC<SearchResultItemProps> = React.memo(
       return constructOrderItem(item, visit, session.currentProvider?.uuid, details);
     }, [item, visit, session.currentProvider?.uuid, details, isOrderSet]);
 
-    const addToBasket = useCallback(() => {
+    const addToBasket = useCallback(async () => {
+      console.log('orders', orders);
       if (isDrugItem && item.narcotic && !isDoctor) {
         showSnackbar({
           title: t('narcoticAccessDenied', "This is a narcotic drug and you don't have access to prescribe this"),
@@ -246,8 +248,10 @@ const SearchResultItem: React.FC<SearchResultItemProps> = React.memo(
       }
       if (isOrderSet) {
         const members = item.members || [];
-        members.forEach((member: any) => {
-          const transformed = transformOrderSetMember(member, visit, session.currentProvider?.uuid, config);
+        const transformedMembers = await Promise.all(
+          members.map((member: any) => transformOrderSetMember(member, visit, session.currentProvider?.uuid, config)),
+        );
+        transformedMembers.forEach((transformed) => {
           if (transformed) {
             // We need to get the current items for this specific basket to append
             const currentBasketItems = orderBasketStore.getState().items[patient.id]?.[transformed.basketKey] || [];
@@ -499,7 +503,7 @@ const OrderBasket: React.FC<OrderBasketProps> = ({
         console.error(e);
         setCreatingEncounterError(
           e.responseBody?.error?.message ||
-            t('tryReopeningTheWorkspaceAgain', 'Please try launching the workspace again'),
+          t('tryReopeningTheWorkspaceAgain', 'Please try launching the workspace again'),
         );
       }
     } else {
@@ -525,7 +529,7 @@ const OrderBasket: React.FC<OrderBasketProps> = ({
         console.error(e);
         setCreatingEncounterError(
           e.responseBody?.error?.message ||
-            t('tryReopeningTheWorkspaceAgain', 'Please try launching the workspace again'),
+          t('tryReopeningTheWorkspaceAgain', 'Please try launching the workspace again'),
         );
       }
     }
@@ -654,9 +658,9 @@ const OrderBasket: React.FC<OrderBasketProps> = ({
                   {isSearching
                     ? t('searching', 'Searching...')
                     : t('searchResultsMatchesForTerm', '{{count}} results for "{{searchTerm}}"', {
-                        count: results?.length,
-                        searchTerm,
-                      })}
+                      count: results?.length,
+                      searchTerm,
+                    })}
                 </span>
                 <Button kind="ghost" onClick={() => setSearchTerm('')} size={isTablet ? 'md' : 'sm'}>
                   {t('back', 'Back')}
@@ -689,7 +693,7 @@ const OrderBasket: React.FC<OrderBasketProps> = ({
                       orderTypes={orderTypes}
                       orderBasketExtensionProps={orderBasketExtensionProps}
                       closeWorkspace={closeWorkspace}
-                      onOrderAdded={() => {}}
+                      onOrderAdded={() => { }}
                       isDoctor={isDoctor}
                     />
                   ))
