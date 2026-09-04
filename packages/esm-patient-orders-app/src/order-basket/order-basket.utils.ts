@@ -274,21 +274,45 @@ export const constructOrderItem = (
     // isOrderIncomplete: !details.isLabItem, // Labs are complete, others are not
   };
 };
-export const transformOrderSetMember = (member: any, visit: Visit, providerUuid: string, config: ConfigObject) => {
+const fetchDrugStrength = async (drugUuid: string): Promise<string | null> => {
+  if (!drugUuid) return null;
+  try {
+    const response = await fetch(`/openmrs/ws/rest/v1/drug/${drugUuid}?v=custom:(strength)`);
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.strength ?? null;
+  } catch {
+    return null;
+  }
+};
+
+export const transformOrderSetMember = async (
+  member: any,
+  visit: Visit,
+  providerUuid: string,
+  config: ConfigObject,
+) => {
   const { memberType, instructions } = member;
 
   if (memberType === 'DRUG') {
+    const strength = await fetchDrugStrength(member.drugUuid);
     const drugOrder = {
       action: 'NEW',
-      display: member.conceptDisplay,
-      commonMedicationName: member.conceptDisplay,
+      display: member.drugDisplay,
+      commonMedicationName: member.drugDisplay,
       drug: {
         uuid: member.drugUuid,
-        display: member.conceptDisplay || member.display,
+        display: member.drugDisplay || member.display,
         concept: {
           uuid: member.conceptUuid,
         },
-      },
+        strength,
+        dosageForm: {
+          display: member.doseUnitDisplay,
+          uuid: member.doseUnitUuid,
+        },
+      }, 
+      freeTextDosage: "",
       dosage: member.dose,
       unit: member.doseUnitUuid ? { value: member.doseUnitDisplay, valueCoded: member.doseUnitUuid } : null,
       route: member.routeUuid ? { valueCoded: member.routeUuid, value: member.routeDisplay } : null,

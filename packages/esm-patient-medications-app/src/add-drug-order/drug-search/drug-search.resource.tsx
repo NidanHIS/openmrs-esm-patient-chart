@@ -54,7 +54,7 @@ interface DrugListFetchResult {
 
 const maxConceptsPerRequest = 20;
 const drugPageSize = 50;
-const drugSearchRepresentation = 'custom:(uuid,display,name,strength,dosageForm:(display,uuid),concept:(display,uuid),narcotic)';
+const drugSearchRepresentation = 'custom:(uuid,display,name,strength,dosageForm:(display,uuid),concept:(display,uuid),narcotic,route:(display,uuid))';
 
 /**
  * Search for a list of drugs based on the given query string or concepts (uuid/name/mapping)
